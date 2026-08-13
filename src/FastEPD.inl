@@ -15,6 +15,7 @@
 //===========================================================================
 //
 #include "FastEPD.h"
+#include "bbep_rect_mask.h"
 #ifndef __LINUX__
 #ifdef ARDUINO
 #include <SPI.h>
@@ -2727,17 +2728,7 @@ int i, k, dy, iStartCol, iEndCol, iStartRow, iEndRow; // clipping area
         iEndRow = pState->native_height - 1;
     }
     // Prepare masked row
-    memset(u8Cache, val, pState->native_width / 4);
-    i = iStartCol/4;
-    memset(u8Cache, 0, i); // whole bytes on left side
-    if ((iStartCol & 3) != 0) { // partial byte
-        u8Cache[i] = val;
-    }
-    i = (iEndCol + 3)/4;
-    memset(&u8Cache[i], 0, (pState->native_width / 4) - i); // whole bytes on right side
-    if ((iEndCol & 3) != 3) { // partial byte
-        u8Cache[i-1] = val;
-    }
+    bbep_rect_mask_row(iStartCol, iEndCol, pState->native_width, val, u8Cache);
     for (k = 0; k < count; k++) {
         bbepRowControl(pState, ROW_START);
         for (i = 0; i < pState->native_height; i++)
@@ -2936,7 +2927,6 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
 {
     int i, n, pass, iDMAOff = 0;
     int iStartCol, iStartRow, iEndCol, iEndRow;
-    uint8_t u8;
 
 #ifdef SHOW_TIME
     long l = millis();
@@ -2992,19 +2982,7 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
     if (pRect) {
         if (bbepFixRect(pState, pRect, &iStartCol, &iEndCol, &iStartRow, &iEndRow)) return BBEP_ERROR_BAD_PARAMETER;
         // Prepare masked row
-        memset(u8Cache, 0xff, pState->native_width / 4);
-        i = iStartCol/4;
-        memset(u8Cache, 0, i); // whole bytes on left side
-        if ((iStartCol & 3) != 0) { // partial byte
-            u8 = 0xff >> ((iStartCol & 3)*2);
-            u8Cache[i] = u8;
-        }
-        i = (iEndCol + 3)/4;
-        memset(&u8Cache[i], 0, (pState->native_width / 4) - i); // whole bytes on right side
-        if ((iEndCol & 3) != 3) { // partial byte
-            u8 = 0xff << ((3-(iEndCol & 3))*2);
-            u8Cache[i-1] = u8;
-        }
+        bbep_rect_mask_row(iStartCol, iEndCol, pState->native_width, 0xff, u8Cache);
     } else { // use the whole display
         iStartCol = iStartRow = 0;
         iEndCol = pState->native_width - 1;
@@ -3211,7 +3189,7 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
                     if (iStartCol > 0 || iEndCol < pState->native_width-1) { // There is a region rectangle defined, clip the output to it
                         uint32_t *src, *dst;
                         src = (uint32_t *)u8Cache;
-                        dst = (uint32_t *)pState->dma_buf;
+                        dst = (uint32_t *)d; // mask the row just written, not the DMA buffer's fixed start
                         for (n=0; n<pState->native_width/16; n++) { // mask off non-changing pixels to 0s
                             dst[n] &= src[n];
                         }
