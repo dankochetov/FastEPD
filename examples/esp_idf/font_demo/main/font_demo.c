@@ -51,6 +51,6 @@ int rc;
       bbepDrawSprite(&virt, &bbep, 0, 0, -1);
 
       // Draw the physical device framebuffer onto the Eink panel
-      bbepFullUpdate(&bbep, CLEAR_SLOW, 0, NULL);
+      bbepFullUpdate(&bbep, CLEAR_SLOW, 0, NULL, NULL, NULL);
     }
 }

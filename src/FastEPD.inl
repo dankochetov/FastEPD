@@ -1866,10 +1866,10 @@ int bbepFixRect(FASTEPDSTATE *pState, BB_RECT *pRect, int *iStartCol, int *iEndC
 //
 // Clear the display with the given code for the given number of repetitions
 //
-void bbepClear(FASTEPDSTATE *pState, uint8_t val, uint8_t count, BB_RECT *pRect)
+void bbepClear(FASTEPDSTATE *pState, uint8_t val, uint8_t count, BB_RECT *pRect, const uint8_t *pMask)
 {
     uint8_t u8;
-    int i, k, dy, iStartCol, iEndCol, iStartRow, iEndRow; // clipping area
+    int i, k, n, dy, iStartCol, iEndCol, iStartRow, iEndRow; // clipping area
     if (val == BB_CLEAR_LIGHTEN) val = 0xaa;
     else if (val == BB_CLEAR_DARKEN) val = 0x55;
     else if (val == BB_CLEAR_NEUTRAL) val = 0x00;
@@ -1892,6 +1892,20 @@ void bbepClear(FASTEPDSTATE *pState, uint8_t val, uint8_t count, BB_RECT *pRect)
             // Send the data
             if (dy < iStartRow || dy > iEndRow) { // skip this row
                 memset(pState->dma_buf, 0, pState->native_width / 4);
+            } else if (pMask) {
+                // pMask: one native_width/4-byte row per scanline, panel column space
+                // (post MIRROR_X/Y), 2-bit drive code per pixel, 0b11 selected / 0b00
+                // not, high bits leftmost -- same layout bbep_rect_mask_row produces.
+                int rowBytes = pState->native_width / 4;
+                // AND 4 bytes at a time. Panel widths not a multiple of 16 (e.g. 1448,
+                // 2760) leave a 1-3 byte tail, masked below; offset 0 is always
+                // 4-byte aligned regardless of width.
+                int nWords = rowBytes / 4;
+                uint32_t val32 = (uint32_t)val * 0x01010101u;
+                uint32_t *dst32 = (uint32_t *)pState->dma_buf;
+                memcpy(pState->dma_buf, &pMask[dy * rowBytes], rowBytes);
+                for (n = 0; n < nWords; n++) dst32[n] &= val32;
+                for (n = nWords * 4; n < rowBytes; n++) pState->dma_buf[n] &= val;
             } else { // mask the area we want to change
                 memcpy(pState->dma_buf, u8Cache, pState->native_width / 4);
             }
@@ -1912,7 +1926,7 @@ int bbepSmoothUpdate(FASTEPDSTATE *pState, bool bKeepOn, uint8_t u8Color)
     if (pState->iPanelType == BB_PANEL_VIRTUAL) return BBEP_ERROR_BAD_PARAMETER;
 
     if (bbepEinkPower(pState, 1) != BBEP_SUCCESS) return BBEP_IO_ERROR;
-    bbepClear(pState, (u8Color == BBEP_WHITE) ? BB_CLEAR_LIGHTEN : BB_CLEAR_DARKEN, 5, NULL);
+    bbepClear(pState, (u8Color == BBEP_WHITE) ? BB_CLEAR_LIGHTEN : BB_CLEAR_DARKEN, 5, NULL, NULL);
     // The other update methods transition everything from white. In this case, we
     // need to allow the user to update from black also
     if (pState->mode == BB_MODE_1BPP) {
@@ -1994,7 +2008,7 @@ int bbepSmoothUpdate(FASTEPDSTATE *pState, bool bKeepOn, uint8_t u8Color)
         } // for pass
     } // 4bpp
     // Set the drivers inside epaper panel into discharge state.
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) bbepEinkPower(pState, 0);
     return BBEP_SUCCESS;
 } /* bbepSmoothUpdate() */
@@ -2069,7 +2083,7 @@ int bbepFastUpdate(FASTEPDSTATE *pState, bool bKeepOn)
         delayMicroseconds(230);
     } // for non-inverted passes
     // Set the drivers inside epaper panel into discharge state.
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) bbepEinkPower(pState, 0);
     return BBEP_SUCCESS;
 } /* bbepFastUpdate() */
@@ -2078,7 +2092,8 @@ int bbepFastUpdate(FASTEPDSTATE *pState, bool bKeepOn)
 // The time to perform the update can vary greatly depending on the pixel mode
 // and selected options
 //
-int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *pRect)
+int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *pRect,
+                    const uint8_t *pClearMask, const uint8_t *pDriveMask)
 {
     int i, n, pass, iDMAOff = 0;
     int iStartCol, iStartRow, iEndCol, iEndRow;
@@ -2091,30 +2106,30 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
     if (bbepEinkPower(pState, 1) != BBEP_SUCCESS) return BBEP_IO_ERROR;
     switch (iClearMode) {
         case CLEAR_SLOW:
-            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect);
-            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect);
-            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect);
-            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect);
+            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect, pClearMask);
+            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect, pClearMask);
+            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect, pClearMask);
+            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect, pClearMask);
             break;
         case CLEAR_FAST:
-            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect);
-            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect);
+            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect, pClearMask);
+            bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect, pClearMask);
             break;
         case CLEAR_WHITE:
             if (pState->panelDef.flags & BB_PANEL_FLAG_DARK) {
-                bbepClear(pState, BB_CLEAR_LIGHTEN, 13, pRect); // push more white
+                bbepClear(pState, BB_CLEAR_LIGHTEN, 13, pRect, pClearMask); // push more white
             } else {
-                bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect);
+                bbepClear(pState, BB_CLEAR_LIGHTEN, 8, pRect, pClearMask);
             }
             break;
         case CLEAR_BLACK: // probably a mistake
-            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect);
+            bbepClear(pState, BB_CLEAR_DARKEN, 8, pRect, pClearMask);
             break;
         case CLEAR_NONE: // nothing to do
         default:
             break;
     }
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, pRect);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, pRect, pClearMask);
 #if defined( SHOW_TIME ) && defined( ARDUINO )
     l = millis() - l;
     Serial.printf("clear time = %dms\n", (int)l);
@@ -2326,7 +2341,14 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
                         } // for n
                       //  vTaskDelay(0);
                     }
-                    if (iStartCol > 0 || iEndCol < pState->native_width-1) { // There is a region rectangle defined, clip the output to it
+                    if (pDriveMask) { // per-pixel drive mask, same row/layout convention as pMask in bbepClear
+                        uint32_t *src, *dst;
+                        src = (uint32_t *)&pDriveMask[dy * (pState->native_width / 4)];
+                        dst = (uint32_t *)d; // mask the row just written, not the DMA buffer's fixed start
+                        for (n=0; n<pState->native_width/16; n++) { // mask off non-changing pixels to 0s
+                            dst[n] &= src[n];
+                        }
+                    } else if (iStartCol > 0 || iEndCol < pState->native_width-1) { // There is a region rectangle defined, clip the output to it
                         uint32_t *src, *dst;
                         src = (uint32_t *)u8Cache;
                         dst = (uint32_t *)d; // mask the row just written, not the DMA buffer's fixed start
@@ -2345,7 +2367,7 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
         } // for pass
     } // 4bpp
     // Set the drivers inside epaper panel into discharge state.
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, pRect);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, pRect, NULL);
     if (!bKeepOn) bbepEinkPower(pState, 0);
     
 #ifdef SHOW_TIME
@@ -2644,7 +2666,7 @@ int bbep2BppPartial(FASTEPDSTATE *pState, bool bKeepOn, int iStartLine, int iEnd
     } // for pass
     memcpy(pState->pPrevious, pState->pCurrent, (pState->native_width/4) * pState->native_height); // previous = current
     // This clear to neutral step is necessary; do not remove
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) {
         bbepEinkPower(pState, 0);
     }
@@ -2757,7 +2779,7 @@ int bbepPartialUpdate(FASTEPDSTATE *pState, bool bKeepOn, int iStartLine, int iE
     } // for each pass
 
 // This clear to neutral step is necessary; do not remove
-    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(pState, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) {
         bbepEinkPower(pState, 0);
     }

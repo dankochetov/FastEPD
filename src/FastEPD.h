@@ -255,7 +255,8 @@ class FASTEPD
     uint8_t *tempBuffer(void) { return _state.pTemp;}
     int einkPower(int bOn);
     void deInit(void) {if (_state.pfnIODeInit) (*_state.pfnIODeInit)(&_state);}
-    int fullUpdate(int iClearMode = CLEAR_SLOW, bool bKeepOn = false, BB_RECT *pRect = NULL);
+    int fullUpdate(int iClearMode = CLEAR_SLOW, bool bKeepOn = false, BB_RECT *pRect = NULL,
+                   const uint8_t *pClearMask = NULL, const uint8_t *pDriveMask = NULL);
     int partialUpdate(bool bKeepOn, int iStartRow = 0, int iEndRow = 4095);
     int smoothUpdate(bool bKeepOn, uint8_t u8Color);
     int fastUpdate(bool bKeepOn = false);
