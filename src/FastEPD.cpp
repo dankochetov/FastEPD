@@ -789,9 +789,9 @@ int FASTEPD::clearWhite(bool bKeepOn)
     fillScreen((_state.mode == BB_MODE_1BPP) ? BBEP_WHITE : 0xf);
     backupPlane(); // previous buffer set to the same color
     // 7 passes is enough to set all of the displays I've used to pure white or black
-    bbepClear(&_state, BB_CLEAR_DARKEN, 7, NULL);
-    bbepClear(&_state, BB_CLEAR_LIGHTEN, 7, NULL);
-    bbepClear(&_state, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(&_state, BB_CLEAR_DARKEN, 7, NULL, NULL);
+    bbepClear(&_state, BB_CLEAR_LIGHTEN, 7, NULL, NULL);
+    bbepClear(&_state, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) bbepEinkPower(&_state, 0);
     return BBEP_SUCCESS;
 } /* clearWhite() */
@@ -802,9 +802,9 @@ int FASTEPD::clearBlack(bool bKeepOn)
     fillScreen(BBEP_BLACK);
     backupPlane(); // previous buffer set to the same color
     // 7 passes is enough to set all of the displays I've used to pure white or black
-    bbepClear(&_state, BB_CLEAR_LIGHTEN, 7, NULL);
-    bbepClear(&_state, BB_CLEAR_DARKEN, 7, NULL);
-    bbepClear(&_state, BB_CLEAR_NEUTRAL, 1, NULL);
+    bbepClear(&_state, BB_CLEAR_LIGHTEN, 7, NULL, NULL);
+    bbepClear(&_state, BB_CLEAR_DARKEN, 7, NULL, NULL);
+    bbepClear(&_state, BB_CLEAR_NEUTRAL, 1, NULL, NULL);
     if (!bKeepOn) bbepEinkPower(&_state, 0);
     return BBEP_SUCCESS;
 } /* clearBlack() */
@@ -821,12 +821,12 @@ int FASTEPD::fastUpdate(bool bKeepOn)
 
 int FASTEPD::fullUpdate(void)
 {
-    return bbepFullUpdate(&_state, CLEAR_SLOW, false, nullptr);
+    return bbepFullUpdate(&_state, CLEAR_SLOW, false, nullptr, nullptr, nullptr);
 }
 
-int FASTEPD::fullUpdate(int iClearMode, bool bKeepOn, BB_RECT *pRect)
+int FASTEPD::fullUpdate(int iClearMode, bool bKeepOn, BB_RECT *pRect, const uint8_t *pClearMask, const uint8_t *pDriveMask)
 {
-    return bbepFullUpdate(&_state, iClearMode, bKeepOn, pRect);
+    return bbepFullUpdate(&_state, iClearMode, bKeepOn, pRect, pClearMask, pDriveMask);
 } /* fullUpdate() */
 
 int FASTEPD::partialUpdate(bool bKeepOn, int iStartLine, int iEndLine)

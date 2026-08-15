@@ -19,7 +19,7 @@ int rc;
     if (rc == BBEP_SUCCESS) {
       //bbepSetPanelSize(&bbep, 1280, 720, BB_PANEL_FLAG_NONE);
       bbepFillScreen(&bbep, BBEP_WHITE);
-      bbepFullUpdate(&bbep, CLEAR_SLOW, 0, NULL);
+      bbepFullUpdate(&bbep, CLEAR_SLOW, 0, NULL, NULL, NULL);
       bbepWriteStringCustom(&bbep, Roboto_Black_80, 0, 200, "Hello World!", BBEP_BLACK);
       bbepPartialUpdate(&bbep, 0, 0, 1000);
       bbepWriteStringCustom(&bbep, Roboto_Black_40, 0, 400, "Aló mundo de FastEPD!", BBEP_BLACK);

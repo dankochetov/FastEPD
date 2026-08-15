@@ -43,7 +43,7 @@ int rc;
         if (JPEG_openRAM(&jpeg, (uint8_t *)it_cartoon, sizeof(it_cartoon), JPEGDraw)) {
             jpeg.ucPixelType = EIGHT_BIT_GRAYSCALE;
             JPEG_decode(&jpeg, 0, 0, 0);
-            bbepFullUpdate(&epaper, CLEAR_SLOW, 0, NULL);
+            bbepFullUpdate(&epaper, CLEAR_SLOW, 0, NULL, NULL, NULL);
         }
     }
     while (1) {
