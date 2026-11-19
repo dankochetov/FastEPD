@@ -274,6 +274,9 @@ static uint16_t LUTBW_16[256];
 // Lookup tables for grayscale mode
 static uint8_t *pGrayLower = NULL, *pGrayUpper = NULL;
 volatile bool dma_is_done = true;
+// Set when a row transfer never signals completion. bbepWriteRow() then skips
+// every later row, and bbepFullUpdate() reports the failure.
+static bool bDMAFailed = false;
 static uint8_t u8Cache[1024]; // used also for masking a row of 2-bit codes, needs to handle up to 4096 pixels wide
 static gpio_num_t u8CKV, u8SPH;
 static uint8_t bSlowSPH = 0;
@@ -447,7 +450,7 @@ void bbepPCA9535DigitalWrite(uint8_t pin, uint8_t value)
 
 uint8_t bbepPCA9535DigitalRead(uint8_t pin)
 {
-    uint8_t uc, port = pin / 8;
+    uint8_t uc = 0, port = pin / 8; // a failed read leaves uc unwritten
     
     pin &= 7;
     bbepI2CReadRegister(0x20, port, &uc, 1);
@@ -744,7 +747,17 @@ int vcom;
         bbepPCA9535DigitalWrite(11, 1); // PWRUP on
         bbepPCA9535DigitalWrite(12, 1); // VCOM CTRL on
         vTaskDelay(3); // allow time to power up
-        while (!(bbepPCA9535DigitalRead(14))) { } // CFG_PIN_PWRGOOD
+        // Bounded by time, not by count: one failed I2C read can take as long
+        // as the Wire timeout.
+        int64_t tStart = esp_timer_get_time();
+        while (!(bbepPCA9535DigitalRead(14))) { // CFG_PIN_PWRGOOD
+            if (esp_timer_get_time() - tStart > 2000000) {
+                pState->pwr_on = 1; // lets the call below run the power-off sequence
+                EPDiyV7EinkPower(pBBEP, 0);
+                return BBEP_IO_ERROR;
+            }
+            vTaskDelay(1);
+        }
 
         //ucTemp[0] = TPS_REG_UPSEQ0;
         //ucTemp[1] = 0xe1;
@@ -778,6 +791,8 @@ int vcom;
         }
         if (iTimeout >= 400) {
             // Serial.println("The power_good signal never arrived!");
+            pState->pwr_on = 1; // lets the call below run the power-off sequence
+            EPDiyV7EinkPower(pBBEP, 0);
             return BBEP_IO_ERROR;
         }
         pState->pwr_on = 1;
@@ -1447,7 +1462,13 @@ void bbepWriteRow(FASTEPDSTATE *pState, uint8_t *pData, int iLen, int bRowStep)
     
 //    Serial.printf("bbepWriteRow %d bytes\n", iLen);
     
+    if (bDMAFailed) return;
+    int64_t tStart = esp_timer_get_time();
     while (!dma_is_done) {
+        if (esp_timer_get_time() - tStart > 100000) {
+            bDMAFailed = true;
+            return;
+        }
         delayMicroseconds(1);
     }
     if (bRowStep) {
@@ -2103,6 +2124,7 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
 #endif
     if (pState->iPanelType == BB_PANEL_VIRTUAL) return BBEP_ERROR_BAD_PARAMETER;
 
+    bDMAFailed = false;
     if (bbepEinkPower(pState, 1) != BBEP_SUCCESS) return BBEP_IO_ERROR;
     switch (iClearMode) {
         case CLEAR_SLOW:
@@ -2368,7 +2390,8 @@ int bbepFullUpdate(FASTEPDSTATE *pState, int iClearMode, bool bKeepOn, BB_RECT *
     } // 4bpp
     // Set the drivers inside epaper panel into discharge state.
     bbepClear(pState, BB_CLEAR_NEUTRAL, 1, pRect, NULL);
-    if (!bKeepOn) bbepEinkPower(pState, 0);
+    if (!bKeepOn || bDMAFailed) bbepEinkPower(pState, 0);
+    if (bDMAFailed) return BBEP_IO_ERROR;
     
 #ifdef SHOW_TIME
     l = millis() - l;
